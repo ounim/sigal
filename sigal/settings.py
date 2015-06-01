@@ -52,6 +52,7 @@ _DEFAULT_CONFIG = {
     'links': '',
     'google_analytics': '',
     'copy_exif_data': True,
+    'copy_xmp_data': True,
     'locale': ''
 }
 

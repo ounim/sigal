@@ -24,6 +24,7 @@
 from __future__ import absolute_import
 
 import codecs
+import operator
 import locale
 import logging
 import markdown
@@ -47,6 +48,12 @@ DESCRIPTION_FILE = "index.md"
 # the progress bar.
 MAX_LABEL_WIDTH = 45
 
+FILTER_FUNCTIONS = {"<": operator.lt,
+                    "<=": operator.le,
+                    "==": operator.eq,
+                    "!=": operator.ne,
+                    ">=": operator.ge,
+                    ">":operator.gt}
 
 class FileExtensionError(Exception):
     """Raised if we made an error when handling file extensions"""
@@ -61,9 +68,10 @@ class PathsDb(object):
 
     """
 
-    def __init__(self, path, img_ext_list, vid_ext_list):
+    def __init__(self, path, img_ext_list, vid_ext_list, img_min_rating):
         self.img_ext_list = img_ext_list
         self.vid_ext_list = vid_ext_list
+        self.img_min_rating = img_min_rating
         self.logger = logging.getLogger(__name__)
 
         # basepath must to be a unicode string so that os.walk will return
@@ -104,9 +112,24 @@ class PathsDb(object):
             dirnames.sort(cmp=locale.strcoll)
 
             self.db['paths_list'].append(relpath)
+            medias = []
+            for f in filenames:
+                ext = os.path.splitext(f)[1]
+                if ext in self.vid_ext_list:
+                    medias.append(f)
+                elif ext in self.img_ext_list:
+                    if self.img_min_rating:
+                        xmp = sigal.image.get_xmp_tags(os.path.join(path,f))
+                        if "http://ns.adobe.com/xap/1.0/" not in xmp:
+                            continue
+                        rating = [data[1] for data in xmp["http://ns.adobe.com/xap/1.0/"]
+                                  if data[0] == "xmp:Rating"]
+                        if ( not rating or
+                            int(rating[0]) < self.img_min_rating):
+                            continue
+                    medias.append(f)
             self.db[relpath] = {
-                'medias': [f for f in filenames if os.path.splitext(f)[1]
-                           in (self.img_ext_list + self.vid_ext_list)],
+                'medias': medias,
                 'subdir': dirnames
             }
             self.db[relpath].update(get_metadata(path))
@@ -179,7 +202,8 @@ class Gallery(object):
 
         self.paths = PathsDb(self.settings['source'],
                              self.settings['img_ext_list'],
-                             self.settings['vid_ext_list'])
+                             self.settings['vid_ext_list'],
+                             self.settings['img_min_rating'])
         self.paths.build()
         self.db = self.paths.db
 
@@ -195,7 +219,7 @@ class Gallery(object):
         # loop on directories in reversed order, to process subdirectories
         # before their parent
         for path in reversed(self.db['paths_list']):
-            source = self.settings['source']
+            source = self.settings['source'].decode('utf-8')
             media_files = [os.path.normpath(join(source, path, f))
                            for f in self.db[path]['medias']]
 
@@ -246,7 +270,7 @@ class Gallery(object):
                     outname = join(outpath, base + '.webm')
                 else:
                     raise FileExtensionError
-
+                
                 if os.path.isfile(outname) and not self.force:
                     self.logger.info("%s exists - skipping", filename)
                 else:

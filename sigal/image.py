@@ -32,6 +32,7 @@
 import logging
 import pilkit.processors
 import sys
+import shutil
 
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageOps
@@ -39,7 +40,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 from pilkit.processors import Transpose, Adjust
 from pilkit.utils import save_image
 from datetime import datetime
-
+import libxmp
 
 def _has_exif_tags(img):
     return hasattr(img, 'info') and 'exif' in img.info
@@ -93,7 +94,12 @@ def generate_image(source, outname, settings, options=None):
     logger.debug(u'Save resized image to {0} ({1})'.format(outname, outformat))
     with open(outname, 'w') as fp:
         save_image(img, fp, outformat, options=options, autoconvert=True)
-
+    # Preserve EXIF data
+    if settings['copy_xmp_data']:
+        try:
+            shutil.copy(source + ".xmp", outname + ".xmp")
+        except IOError:
+            pass
 
 def generate_thumbnail(source, outname, box, fit=True, options=None):
     """Create a thumbnail image."""
@@ -125,6 +131,7 @@ def _get_exif_data(filename):
 
     img = PILImage.open(filename)
     exif = img._getexif() or {}
+
     data = dict((TAGS.get(t, t), v) for (t, v) in exif.items())
 
     if 'GPSInfo' in data:
@@ -146,6 +153,9 @@ def dms_to_degrees(v):
     s = float(v[2][0]) / float(v[2][1])
     return d + (m / 60.0) + (s / 3600.0)
 
+def get_xmp_tags(source):
+    return libxmp.file_to_dict(source)
+
 
 def get_exif_tags(source):
     """Read EXIF tags from file @source and return a tuple of two dictionaries,
@@ -166,6 +176,15 @@ def get_exif_tags(source):
     simple = {}
 
     # Provide more accessible tags in the 'simple' key
+    if 'UserComment' in data:
+        comment = data['UserComment'][8:]
+        encoding = data['UserComment'][:8]
+        if encoding == "UNICODE\x00":
+            simple['comment'] = unicode(comment.decode("utf-16"))
+        elif encoding == "ASCII\x00\x00\x00":
+            simple['comment'] = unicode(comment.decode("latin-1"))
+            
+
     if 'FNumber' in data:
         fnumber = data['FNumber']
         simple['fstop'] = float(fnumber[0]) / fnumber[1]

@@ -153,6 +153,7 @@ class Writer(object):
             if ext in self.settings['img_ext_list']:
                 media_ctx['type'] = 'img'
                 media_ctx['file'] = i
+                media_ctx['title'] = i
 
                 file_path = os.path.join(path, i)
                 raw, simple = sigal.image.get_exif_tags(file_path)
